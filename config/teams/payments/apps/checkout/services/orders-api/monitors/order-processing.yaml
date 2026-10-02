@@ -1,0 +1,76 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Monitor
+metadata:
+  name: order-processing
+spec:
+  type: api
+  environments: [staging]
+  locations: [local]
+  authRef: orders-oauth
+  timeout: 25m
+  maxExecutions: 100
+  parameters:
+    operation:
+      type: string
+      required: false
+      defaultValue: synthetic-order
+  schedule:
+    every: 5m
+    overlap: skip
+    paused: true
+  steps:
+    - id: create
+      type: http
+      request:
+        method: POST
+        url: '${env.baseUrl}/jobs'
+        headers:
+          Idempotency-Key: '${run.id}:${step.instanceId}'
+          X-Probe-Key: '${secrets.secret/data/payments/orders#probeKey}'
+        json:
+          operation: '${vars.operation}'
+      assertions:
+        - source: status
+          operator: equals
+          value: 202
+      extract:
+        jobId:
+          source: body
+          path: $.id
+    - id: ready
+      type: poll
+      interval: 30s
+      timeout: 20m
+      request:
+        method: GET
+        url: '${env.baseUrl}/jobs/${vars.jobId}'
+      until: "response.status == 200 && response.body.state == 'READY'"
+      failWhen: "response.status >= 400 || response.body.state == 'FAILED'"
+    - id: items
+      type: http
+      request:
+        method: GET
+        url: '${env.baseUrl}/jobs/${vars.jobId}/items'
+      assertions:
+        - source: status
+          operator: equals
+          value: 200
+        - source: body
+          path: $.items[*].requiredField
+          operator: allNotNull
+      postResponse:
+        script: scripts/validate-order-items.js
+        outputs: [itemCount]
+    - id: validate-count
+      type: assert
+      expression: vars.itemCount > 0
+  cleanup:
+    - id: delete-job
+      type: http
+      request:
+        method: DELETE
+        url: '${env.baseUrl}/jobs/${vars.jobId}'
+      assertions:
+        - source: status
+          operator: equals
+          value: 204

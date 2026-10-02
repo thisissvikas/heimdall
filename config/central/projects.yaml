@@ -1,0 +1,7 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Projects
+metadata:
+  name: projects
+spec:
+  entries:
+    commerce: Commerce APIs

@@ -1,0 +1,8 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Suite
+metadata:
+  name: deployment
+spec:
+  monitors: [payments/checkout/orders-api/order-processing]
+  environments: [staging]
+  locations: [local]

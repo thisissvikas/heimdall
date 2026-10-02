@@ -1,0 +1,8 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Environment
+metadata:
+  name: staging
+spec:
+  values:
+    baseUrl: http://fixture:8090
+  production: false

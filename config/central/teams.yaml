@@ -1,0 +1,7 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Teams
+metadata:
+  name: teams
+spec:
+  entries:
+    payments: '@your-org/payments'

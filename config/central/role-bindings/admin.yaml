@@ -1,0 +1,13 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: RoleBinding
+metadata:
+  name: fixture-admin
+spec:
+  subjects: [dev-admin]
+  role: PlatformAdministrator
+  scopes: ['*']
+  environments: [staging]
+  locations: [local]
+  secretPrefixes: [secret/data/payments]
+  production: true
+  artifacts: true

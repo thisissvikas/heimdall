@@ -1,0 +1,7 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Team
+metadata:
+  name: payments
+spec:
+  defaults:
+    values: {}

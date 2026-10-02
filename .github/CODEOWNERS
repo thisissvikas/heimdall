@@ -1,0 +1,9 @@
+* @your-org/platform
+/.github/ @your-org/platform
+/components/ @your-org/platform
+/libraries/ @your-org/platform
+/build-logic/ @your-org/platform
+/gradle/ @your-org/platform
+/deploy/ @your-org/platform
+/config/central/ @your-org/platform
+/config/teams/payments/ @your-org/payments

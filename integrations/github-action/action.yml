@@ -1,0 +1,38 @@
+name: Heimdall API synthetics gate
+description: Run a Git-approved suite with GitHub OIDC and block promotion on incomplete or failed coverage.
+inputs:
+  endpoint:
+    description: Heimdall HTTPS API endpoint
+    required: true
+  reference:
+    description: Approved team/application/suite reference
+    required: true
+  environment:
+    description: Git-approved environment
+    required: true
+  locations:
+    description: Comma-separated approved locations
+    default: ''
+  timeout-seconds:
+    description: Maximum deployment gate wait
+    default: '1800'
+outputs:
+  run-id:
+    description: Heimdall run identifier
+    value: ${{ steps.run.outputs.run-id }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24.19.0'
+    - id: run
+      shell: bash
+      env:
+        HEIMDALL_ENDPOINT: ${{ inputs.endpoint }}
+        HEIMDALL_REFERENCE: ${{ inputs.reference }}
+        HEIMDALL_ENVIRONMENT: ${{ inputs.environment }}
+        HEIMDALL_LOCATIONS: ${{ inputs.locations }}
+        HEIMDALL_TIMEOUT: ${{ inputs.timeout-seconds }}
+        HEIMDALL_ACTION_PATH: ${{ github.action_path }}
+      run: node "$HEIMDALL_ACTION_PATH/run.mjs"

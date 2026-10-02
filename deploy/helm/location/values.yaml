@@ -1,0 +1,4 @@
+location: ''
+http: {repository: '', digest: '', secretName: '', replicas: 2}
+script: {repository: '', digest: '', replicas: 2, runtimeClassName: gvisor}
+serviceAccountName: default

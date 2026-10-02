@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Release.Name }}-http}
+spec:
+  replicas: {{ .Values.http.replicas }}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-http}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-http}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532}
+      containers:
+        - name: http
+          image: "{{ required "Set HTTP image repository" .Values.http.repository }}@{{ required "Pin HTTP image digest" .Values.http.digest }}"
+          envFrom:
+            - secretRef: {name: {{ required "Set runner existing secretName" .Values.http.secretName }}}
+          env:
+            - {name: LOCATION, value: {{ required "Set the central location ID" .Values.location | quote }}}
+            - {name: SCRIPT_ENDPOINT, value: "http://{{ .Release.Name }}-script:8081"}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: '2', memory: 1Gi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ .Release.Name }}-script}
+spec:
+  replicas: {{ .Values.script.replicas }}
+  selector:
+    matchLabels: {app: {{ .Release.Name }}-script}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-script}
+    spec:
+      runtimeClassName: {{ required "An installed gVisor RuntimeClass is required" .Values.script.runtimeClassName }}
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532}
+      containers:
+        - name: script
+          image: "{{ required "Set sandbox service image repository" .Values.script.repository }}@{{ required "Pin sandbox service image digest" .Values.script.digest }}"
+          ports: [{name: http, containerPort: 8081}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 100m, memory: 64Mi}, limits: {cpu: 500m, memory: 96Mi}}
+          readinessProbe: {httpGet: {path: /health, port: http}}
+          livenessProbe: {httpGet: {path: /health, port: http}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Release.Name }}-script}
+spec:
+  selector: {app: {{ .Release.Name }}-script}
+  ports: [{name: http, port: 8081, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: {{ .Release.Name }}-script-isolation}
+spec:
+  podSelector:
+    matchLabels: {app: {{ .Release.Name }}-script}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: {{ .Release.Name }}-http}
+      ports: [{protocol: TCP, port: 8081}]
+  egress: []

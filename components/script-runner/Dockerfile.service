@@ -1,0 +1,6 @@
+FROM node:24.19.0-alpine
+WORKDIR /sandbox
+COPY sandbox.mjs service.mjs ./
+USER 65532:65532
+EXPOSE 8081
+ENTRYPOINT ["node", "/sandbox/service.mjs"]

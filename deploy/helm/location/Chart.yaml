@@ -1,0 +1,6 @@
+apiVersion: v2
+name: heimdall-location
+description: Regional API runner and isolated JavaScript service
+version: 0.1.0
+appVersion: 0.1.0
+type: application

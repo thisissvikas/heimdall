@@ -1,0 +1,13 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: RoleBinding
+metadata:
+  name: fixture-runners
+spec:
+  subjects: [dev-runner, scheduler]
+  role: Runner
+  scopes: [payments/checkout]
+  environments: [staging]
+  locations: [local]
+  secretPrefixes: [secret/data/payments]
+  production: false
+  artifacts: false

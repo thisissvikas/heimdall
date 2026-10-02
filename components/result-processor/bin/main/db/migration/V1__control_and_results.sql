@@ -1,0 +1,33 @@
+CREATE SCHEMA control;
+CREATE SCHEMA results;
+CREATE TABLE control.shedlock (name VARCHAR(64) PRIMARY KEY, lock_until TIMESTAMP NOT NULL, locked_at TIMESTAMP NOT NULL, locked_by VARCHAR(255) NOT NULL);
+CREATE TABLE control.snapshots (commit TEXT PRIMARY KEY, digest TEXT NOT NULL, bundle JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE control.reconciliation (id INTEGER PRIMARY KEY CHECK (id=1), desired TEXT, active TEXT REFERENCES control.snapshots(commit), schedules TEXT, status TEXT NOT NULL, error TEXT, last_success TIMESTAMPTZ);
+INSERT INTO control.reconciliation(id,status) VALUES (1,'starting');
+CREATE TABLE control.webhook_deliveries (id TEXT PRIMARY KEY, received_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE control.runs (id TEXT PRIMARY KEY, subject TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL, environment TEXT NOT NULL, config_commit TEXT NOT NULL, bundle_digest TEXT NOT NULL, status TEXT NOT NULL, publication TEXT NOT NULL DEFAULT 'pending', request JSONB NOT NULL, snapshot JSONB NOT NULL, dispatch_state TEXT NOT NULL DEFAULT 'pending');
+CREATE INDEX runs_history ON control.runs(created_at DESC,id DESC);
+CREATE TABLE control.idempotency (subject TEXT NOT NULL, key TEXT NOT NULL, request_hash TEXT NOT NULL, run_id TEXT NOT NULL REFERENCES control.runs(id), PRIMARY KEY(subject,key));
+CREATE TABLE control.run_locations (run_id TEXT NOT NULL REFERENCES control.runs(id), monitor TEXT NOT NULL, location TEXT NOT NULL, status TEXT NOT NULL, sequence BIGINT NOT NULL DEFAULT 0, cleanup TEXT, error TEXT, PRIMARY KEY(run_id,monitor,location));
+CREATE INDEX run_locations_scope ON control.run_locations(monitor,location,run_id);
+CREATE TABLE control.state (key TEXT PRIMARY KEY, cipher BYTEA NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE control.claims (key TEXT PRIMARY KEY, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE control.audit (id TEXT PRIMARY KEY, timestamp TIMESTAMPTZ NOT NULL, subject TEXT NOT NULL, action TEXT NOT NULL, resource TEXT NOT NULL);
+CREATE INDEX audit_time ON control.audit(timestamp DESC);
+CREATE TABLE control.agents (id TEXT PRIMARY KEY, location TEXT NOT NULL, subject TEXT NOT NULL, seen_at TIMESTAMPTZ NOT NULL, runtime TEXT NOT NULL);
+CREATE TABLE control.artifacts (id TEXT PRIMARY KEY,run_id TEXT NOT NULL REFERENCES control.runs(id),monitor TEXT NOT NULL,location TEXT NOT NULL,object_key TEXT NOT NULL UNIQUE,created_at TIMESTAMPTZ NOT NULL,size_bytes BIGINT NOT NULL);
+CREATE TABLE results.events (partition_time TIMESTAMPTZ NOT NULL, event_id TEXT NOT NULL, run_id TEXT NOT NULL, payload JSONB NOT NULL, PRIMARY KEY(partition_time,event_id)) PARTITION BY RANGE(partition_time);
+CREATE TABLE results.step_attempts (started_at TIMESTAMPTZ NOT NULL, id TEXT NOT NULL, run_id TEXT NOT NULL, monitor TEXT NOT NULL, location TEXT NOT NULL, step_id TEXT NOT NULL, success BOOLEAN NOT NULL, duration_ms BIGINT NOT NULL, payload JSONB NOT NULL, PRIMARY KEY(started_at,id)) PARTITION BY RANGE(started_at);
+CREATE INDEX attempts_run ON results.step_attempts(run_id,started_at,id);
+CREATE TABLE results.aggregates (day DATE NOT NULL, monitor TEXT NOT NULL, environment TEXT NOT NULL, location TEXT NOT NULL, passed BIGINT NOT NULL DEFAULT 0, failed BIGINT NOT NULL DEFAULT 0, PRIMARY KEY(day,monitor,environment,location));
+CREATE TABLE results.alert_state (monitor TEXT NOT NULL, environment TEXT NOT NULL, location TEXT NOT NULL, failures INTEGER NOT NULL, last_time TIMESTAMPTZ NOT NULL, alerting BOOLEAN NOT NULL DEFAULT FALSE, PRIMARY KEY(monitor,environment,location));
+CREATE TABLE control.notification_intents (id TEXT PRIMARY KEY, destination TEXT NOT NULL, body JSONB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt TIMESTAMPTZ NOT NULL DEFAULT now(), delivered_at TIMESTAMPTZ);
+CREATE OR REPLACE FUNCTION results.ensure_partitions(stamp TIMESTAMPTZ) RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE start_day DATE := (stamp AT TIME ZONE 'UTC')::date; suffix TEXT := to_char(start_day,'YYYYMMDD');
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('heimdall-partitions'));
+  EXECUTE format('CREATE TABLE IF NOT EXISTS results.events_%s PARTITION OF results.events FOR VALUES FROM (%L) TO (%L)',suffix,start_day::text || ' 00:00:00+00',(start_day+1)::text || ' 00:00:00+00');
+  EXECUTE format('CREATE TABLE IF NOT EXISTS results.attempts_%s PARTITION OF results.step_attempts FOR VALUES FROM (%L) TO (%L)',suffix,start_day::text || ' 00:00:00+00',(start_day+1)::text || ' 00:00:00+00');
+END $$;
+SELECT results.ensure_partitions(now());
+SELECT results.ensure_partitions(now()+interval '1 day');

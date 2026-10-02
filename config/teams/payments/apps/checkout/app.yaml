@@ -1,0 +1,8 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Application
+metadata:
+  name: checkout
+spec:
+  project: commerce
+  defaults:
+    values: {}

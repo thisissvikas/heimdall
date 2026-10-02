@@ -1,0 +1,54 @@
+{{- range $name, $component := .Values.components }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: {{ $.Release.Name }}-{{ $name }}}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels: {app: {{ $.Release.Name }}-{{ $name }}}
+  template:
+    metadata:
+      labels: {app: {{ $.Release.Name }}-{{ $name }}}
+    spec:
+      serviceAccountName: {{ $.Values.serviceAccountName }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext: {runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532}
+      containers:
+        - name: {{ $name }}
+          image: "{{ required "Set each component repository" $component.repository }}@{{ required "Pin each component image digest" $component.digest }}"
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          envFrom:
+            - secretRef: {name: {{ required "Set each component existing secretName" $component.secretName }}}
+          env:
+            - {name: HOME, value: /work}
+            - {name: HEIMDALL_GIT_CHECKOUT, value: /work/approved}
+          resources: {{ toYaml $.Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+            - {name: tmp, mountPath: /tmp}
+          {{- if eq $name "control-plane" }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /actuator/health, port: http}, initialDelaySeconds: 10}
+          livenessProbe: {httpGet: {path: /actuator/health, port: http}, initialDelaySeconds: 30}
+          {{- end }}
+      volumes:
+        - {name: work, emptyDir: {}}
+        - {name: tmp, emptyDir: {}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: {{ $.Release.Name }}-{{ $name }}}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: {{ $.Release.Name }}-{{ $name }}}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: {{ .Release.Name }}-control-plane}
+spec:
+  selector: {app: {{ .Release.Name }}-control-plane}
+  ports: [{name: http, port: 8080, targetPort: http}]

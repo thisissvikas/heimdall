@@ -1,0 +1,8 @@
+.gradle/
+.gradle-user/
+**/build/
+.local/
+node_modules/
+*.log
+.DS_Store
+!gradle/wrapper/gradle-wrapper.jar

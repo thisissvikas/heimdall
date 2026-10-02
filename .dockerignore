@@ -1,0 +1,11 @@
+.git
+.gradle
+.gradle-user
+.local
+**/bin
+**/build/classes
+**/build/reports
+**/build/test-results
+**/build/tmp
+**/build/jacoco
+node_modules

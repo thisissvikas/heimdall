@@ -1,0 +1,35 @@
+server:
+  port: 8080
+  tomcat:
+    max-http-form-post-size: 256KB
+spring:
+  threads:
+    virtual:
+      enabled: true
+  flyway:
+    enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: never
+heimdall:
+  state-key: ${STATE_KEY:}
+  s3-endpoint: ${S3_ENDPOINT:http://localhost:9000}
+  s3-region: ${S3_REGION:us-east-1}
+  s3-bucket: ${S3_BUCKET:heimdall}
+  jdbc-url: ${JDBC_URL:jdbc:postgresql://localhost:5432/heimdall}
+  db-user: ${DB_USER:heimdall}
+  db-password: ${DB_PASSWORD:heimdall-local}
+  temporal-address: ${TEMPORAL_ADDRESS:localhost:7233}
+  temporal-namespace: ${TEMPORAL_NAMESPACE:default}
+  git-url: ${GIT_URL:}
+  git-branch: ${GIT_BRANCH:main}
+  github-repository: ${GITHUB_REPOSITORY:example/heimdall}
+  webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+  oidc-issuer: ${OIDC_ISSUER:}
+  oidc-jwks: ${OIDC_JWKS:}
+  oidc-audience: ${OIDC_AUDIENCE:heimdall}

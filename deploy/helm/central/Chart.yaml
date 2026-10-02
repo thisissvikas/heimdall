@@ -1,0 +1,6 @@
+apiVersion: v2
+name: heimdall-central
+description: Heimdall API control plane, Temporal workers, results and notifications
+version: 0.1.0
+appVersion: 0.1.0
+type: application

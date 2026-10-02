@@ -1,0 +1,7 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Service
+metadata:
+  name: orders-api
+spec:
+  defaults:
+    values: {}

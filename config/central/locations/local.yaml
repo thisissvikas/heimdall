@@ -1,0 +1,12 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Location
+metadata:
+  name: local
+spec:
+  network: private
+  allowedHosts: [fixture, localhost]
+  scopes: [payments/checkout]
+  capabilities: [api]
+  enabled: true
+  capacity: 20
+  region: local-fixture

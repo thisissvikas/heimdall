@@ -1,0 +1,11 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: Authentication
+metadata:
+  name: orders-oauth
+spec:
+  type: oauth2
+  tokenUrl: '${env.baseUrl}/oauth/token'
+  clientIdRef: secret/data/payments/orders#clientId
+  clientSecretRef: secret/data/payments/orders#clientSecret
+  scope: orders:read orders:write
+  maxRefresh: 1

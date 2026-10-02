@@ -1,0 +1,9 @@
+components:
+  control-plane: {repository: '', digest: '', secretName: '', replicas: 2}
+  workflow-worker: {repository: '', digest: '', secretName: '', replicas: 2}
+  result-processor: {repository: '', digest: '', secretName: '', replicas: 2}
+  notification-worker: {repository: '', digest: '', secretName: '', replicas: 2}
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {cpu: '2', memory: 1Gi}
+serviceAccountName: default

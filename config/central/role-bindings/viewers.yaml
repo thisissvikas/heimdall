@@ -1,0 +1,13 @@
+apiVersion: synthetics.heimdall.dev/v1alpha1
+kind: RoleBinding
+metadata:
+  name: fixture-viewers
+spec:
+  subjects: [dev-viewer]
+  role: Viewer
+  scopes: [payments/checkout]
+  environments: [staging]
+  locations: [local]
+  secretPrefixes: []
+  production: false
+  artifacts: false

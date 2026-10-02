@@ -23,14 +23,13 @@ The Gradle wrapper downloads the pinned Gradle version. The first build also dow
 
 `build` runs unit, integration and end-to-end checks and packages the services. Integration tests use disposable Docker containers. A successful validation reports the approved example's monitor count and bundle digest.
 
-## 3. Start dependencies and seed fixture credentials
+## 3. Start dependencies
 
 ```sh
 docker compose -f deploy/local/compose.yaml up -d postgres temporal kafka vault storage fixture
-docker compose -f deploy/local/compose.yaml exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=fixture-vault-root vault vault kv put secret/payments/orders clientId=fixture-client clientSecret=fixture-client-secret probeKey=fixture-probe-key
 ```
 
-If the second command runs before Vault is ready, repeat it after a few seconds. These are disposable fixture credentials; the local Compose file uses fixture identities and encryption keys. Real deployments need operator-provisioned credentials and keys.
+The local Compose file uses fixture identities and encryption keys. Real deployments need operator-provisioned credentials and keys.
 
 The fixture is available at `http://localhost:8090/health` from your laptop. Its container name is `fixture`; the checked-in staging environment uses `http://fixture:8090` so the runner can reach it inside Compose.
 
@@ -51,6 +50,14 @@ The local tokens map to the example's centrally defined roles:
 | `fixture-runner-token` | Run and cancel checkout staging monitors at `local`, using the granted secret prefix |
 | `fixture-viewer-token` | Read checkout staging history and steps |
 | `fixture-admin-token` | Read reconciliation, audit and sensitive artifact APIs; platform administration |
+
+Seed Vault after the stack has started:
+
+```sh
+docker compose -f deploy/local/compose.yaml exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=fixture-vault-root vault vault kv put secret/payments/orders clientId=fixture-client clientSecret=fixture-client-secret probeKey=fixture-probe-key
+```
+
+These are disposable fixture credentials. Seeding after startup ensures a recreated Vault container has the required values.
 
 ## 5. Execute the deployment suite
 

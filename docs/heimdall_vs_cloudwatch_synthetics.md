@@ -1,6 +1,6 @@
 # Heimdall vs. AWS CloudWatch Synthetics
 
-**Recommendation:** Build and deploy Heimdall in-house for the scale and internal workflows proposed in [plan.md](plan.md). Its shared execution pools avoid CloudWatch Synthetics’ per-run service fee, while its integration interfaces let monitoring fit our identity, secrets, deployment, and observability systems. This is a design comparison; Heimdall’s capabilities and savings remain to be validated.
+**Recommendation:** Build and deploy Heimdall in-house for the scale and internal workflows proposed in [plan.md](../plan.md). Its shared execution pools avoid CloudWatch Synthetics’ per-run service fee, while its integration interfaces let monitoring fit our identity, secrets, deployment, and observability systems. This is a design comparison; Heimdall’s capabilities and savings remain to be validated.
 
 **Cost: a stronger economic model at scale.** Using AWS’s published US East example rate of **$0.0012 per canary run**, the proposal’s 10,000 monitors across three locations would cost:
 

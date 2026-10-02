@@ -58,6 +58,51 @@ class HttpActivitiesIntegrationTest {
   }
 
   @Test
+  @Timeout(30)
+  void heartbeatsContinueDuringSlowResultPersistence() {
+    var step = request("read", "GET", "");
+    server.enqueue(new MockResponse().setBody("{}"));
+    var slowResults =
+        new RecordingResults() {
+          @Override
+          public void attempt(Attempt attempt) {
+            try {
+              Thread.sleep(12000);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+              throw new IllegalStateException(e);
+            }
+            super.attempt(attempt);
+          }
+        };
+    var activity =
+        new HttpActivities(
+            state,
+            slowResults,
+            ref -> "unused",
+            ScriptSandbox.local(Path.of(System.getProperty("heimdall.root"))));
+    try (var env = io.temporal.testing.TestWorkflowEnvironment.newInstance()) {
+      env.newWorker("workflow")
+          .registerWorkflowImplementationTypes(dev.heimdall.workflow.ApiWorkflowImpl.class);
+      env.newWorker("http-local").registerActivitiesImplementations(activity);
+      env.newWorker("publication")
+          .registerActivitiesImplementations(
+              (dev.heimdall.workflow.PublicationActivities) event -> {});
+      env.start();
+      var stub =
+          env.getWorkflowClient()
+              .newWorkflowStub(
+                  dev.heimdall.workflow.ApiWorkflow.class,
+                  io.temporal.client.WorkflowOptions.newBuilder()
+                      .setWorkflowId("slow-results")
+                      .setTaskQueue("workflow")
+                      .build());
+      assertEquals(Status.passed, stub.execute(input(List.of(step))).status());
+      assertEquals(1, server.getRequestCount());
+    }
+  }
+
+  @Test
   void chainsExtractionEncodedUrlsAndTypedJsonBodies() throws Exception {
     var create =
         request("create", "POST", ",\"extract\":{\"id\":{\"source\":\"body\",\"path\":\"$.id\"}}");

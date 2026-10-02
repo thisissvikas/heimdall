@@ -26,6 +26,7 @@ services:
     healthcheck: {test: [CMD-SHELL, "pg_isready -U heimdall"], interval: 3s, timeout: 2s, retries: 30}
   temporal:
     image: temporalio/temporal:1.9.1
+    user: '0:0'
     command: [server, start-dev, --ip, 0.0.0.0, --db-filename, /data/temporal.db]
     ports: ["127.0.0.1:7233:7233", "127.0.0.1:8233:8233"]
     volumes: ["temporal:/data"]

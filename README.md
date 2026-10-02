@@ -12,8 +12,8 @@ Its specialty: **team-owned tests, durable workflows, and a watch across regions
 - **More than a green status code.** Assert headers, JSON paths, schemas, response times, and collection contents. Use isolated JavaScript for deeper checks—such as ensuring every returned item has a non-null field.
 - **Jobs that take their sweet time.** Durable waits and polling handle long-running operations without reserving HTTP execution slots. Workflows resume after worker restarts. Even Asgard has asynchronous APIs.
 - **Every chosen realm.** Run from selected geographic locations or inside private networks, with separate results and timings for each location.
-- **The deployment gates.** GitHub Actions, OIDC, GitHub Checks, and JUnit results bring synthetics into promotion pipelines. Missing results cannot wave a deployment through.
-- **The evidence.** Query run history, step attempts, assertion failures, and redacted artifacts through APIs. Failure, recovery, latency, and missing-coverage alerts sound the horn when needed.
+- **The deployment gates.** GitHub Actions, OIDC, and JUnit results bring synthetics into promotion pipelines. Missing results cannot wave a deployment through.
+- **The evidence.** Query run history, step attempts, assertion failures, and redacted diagnostics through APIs. Consecutive-failure and recovery notifications go to signed webhook destinations.
 
 ## One source of truth. Many watchtowers.
 

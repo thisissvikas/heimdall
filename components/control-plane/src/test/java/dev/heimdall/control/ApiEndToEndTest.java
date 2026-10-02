@@ -40,8 +40,10 @@ class ApiEndToEndTest {
   static TestWorkflowEnvironment temporal;
   static JdbcResults results;
   static ConfigurationRepository configs;
+  static DiagnosticArtifacts diagnostics;
   org.springframework.context.ConfigurableApplicationContext app;
   MockWebServer target;
+  MockWebServer vault;
   ResultConsumer consumer;
   Thread consumerThread;
   KafkaPublication publisher;
@@ -58,6 +60,19 @@ class ApiEndToEndTest {
     ds = Database.connect(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword(), 8);
     Database.migrate(ds);
     results = new JdbcResults(ds);
+    var objects = new ConcurrentHashMap<String, byte[]>();
+    diagnostics =
+        new DiagnosticArtifacts(
+            results,
+            new Artifacts() {
+              public void put(String key, byte[] bytes) {
+                objects.put(key, bytes.clone());
+              }
+
+              public byte[] get(String key) {
+                return objects.get(key).clone();
+              }
+            });
     configs = new ConfigurationRepository(ds);
     target = new MockWebServer();
     target.setDispatcher(
@@ -65,9 +80,19 @@ class ApiEndToEndTest {
           @Override
           public MockResponse dispatch(RecordedRequest request) {
             String path = request.getPath();
-            if (path.equals("/oauth/token"))
+            if (path.equals("/oauth/token")) {
+              assertTrue(
+                  request.getBody().readUtf8().contains("client_secret=fixture-client-secret"));
               return new MockResponse().setBody("{\"access_token\":\"fixture-token\"}");
+            }
+            if (!"Bearer fixture-token".equals(request.getHeader("Authorization")))
+              return new MockResponse().setResponseCode(401);
             if (request.getMethod().equals("POST")) {
+              assertEquals("fixture-probe-key", request.getHeader("X-Probe-Key"));
+              if (request.getBody().readUtf8().contains("failure-diagnostics"))
+                return new MockResponse()
+                    .setResponseCode(500)
+                    .setBody("{\"private\":\"sensitive-target-response\"}");
               creates.incrementAndGet();
               return new MockResponse().setResponseCode(202).setBody("{\"id\":\"job-1\"}");
             }
@@ -84,6 +109,19 @@ class ApiEndToEndTest {
           }
         });
     target.start();
+    vault = new MockWebServer();
+    vault.setDispatcher(
+        new Dispatcher() {
+          @Override
+          public MockResponse dispatch(RecordedRequest request) {
+            assertEquals("fixture-vault-token", request.getHeader("X-Vault-Token"));
+            assertEquals("/v1/secret/data/payments/orders", request.getPath());
+            return new MockResponse()
+                .setBody(
+                    "{\"data\":{\"data\":{\"clientId\":\"fixture-client\",\"clientSecret\":\"fixture-client-secret\",\"probeKey\":\"fixture-probe-key\"}}}");
+          }
+        });
+    vault.start();
     var source =
         new dev.heimdall.configuration.Compiler()
             .compile(Path.of(System.getProperty("heimdall.root")), "e2e-approved");
@@ -117,8 +155,9 @@ class ApiEndToEndTest {
             new HttpActivities(
                 new EncryptedState(ds, Base64.getEncoder().encodeToString(new byte[32])),
                 results,
-                ref -> "fixture-secret",
-                ScriptSandbox.local(Path.of(System.getProperty("heimdall.root")))));
+                new VaultSecrets(vault.url("/").toString(), "fixture-vault-token"),
+                ScriptSandbox.local(Path.of(System.getProperty("heimdall.root"))),
+                diagnostics));
     publisher = new KafkaPublication(KAFKA.getBootstrapServers());
     temporal.newWorker("publication").registerActivitiesImplementations(publisher);
     temporal.start();
@@ -139,7 +178,10 @@ class ApiEndToEndTest {
                     "fixture-webhook-secret",
                     "heimdall.github-repository",
                     "example/heimdall"))
-            .run();
+            .run(
+                "--server.port=0",
+                "--heimdall.webhook-secret=fixture-webhook-secret",
+                "--heimdall.github-repository=example/heimdall");
     base =
         "http://localhost:%d"
             .formatted(((WebServerApplicationContext) app).getWebServer().getPort());
@@ -153,6 +195,7 @@ class ApiEndToEndTest {
     if (publisher != null) publisher.close();
     if (temporal != null) temporal.close();
     if (target != null) target.close();
+    if (vault != null) vault.close();
     if (ds != null) ds.close();
     KAFKA.stop();
     PG.stop();
@@ -209,6 +252,15 @@ class ApiEndToEndTest {
     assertEquals("e2e-approved", finalRun.configCommit());
     assertEquals("app-commit", finalRun.deployment().commit());
     assertTrue(results.steps(id).size() >= 4);
+    String publicSteps = Json.write(results.steps(id));
+    String history = temporal.getWorkflowClient().fetchHistory(workflow).toJson(true);
+    for (var secret :
+        List.of(
+            "fixture-token", "fixture-probe-key", "fixture-client-secret", "fixture-vault-token")) {
+      assertFalse(publicSteps.contains(secret));
+      assertFalse(history.contains(secret));
+    }
+    assertTrue(vault.getRequestCount() >= 3);
     assertEquals(1, creates.get() - createsBefore);
     assertEquals(1, deletes.get() - deletesBefore);
     assertEquals(
@@ -216,6 +268,40 @@ class ApiEndToEndTest {
         request("GET", "/v1/runs/%s/steps".formatted(id), "viewer-token", null, null).statusCode());
     var mutation = request("POST", "/v1/monitors", "runner-token", "{}", null);
     assertEquals(404, mutation.statusCode());
+  }
+
+  @Test
+  void failureArtifactsRequireSeparateAccessAndOmitSecretsAndRawBodies() throws Exception {
+    var request =
+        new StartRun(
+            List.of(Fixtures.MONITOR),
+            "staging",
+            List.of("local"),
+            Map.of("operation", "failure-diagnostics"),
+            null);
+    var admitted =
+        request(
+            "POST", "/v1/runs", "runner-token", Json.write(request), UUID.randomUUID().toString());
+    assertEquals(202, admitted.statusCode());
+    String id = Json.MAPPER.readTree(admitted.body()).path("id").asText();
+    temporal
+        .getWorkflowClient()
+        .newUntypedWorkflowStub(ExecutionIds.workflowId(id, Fixtures.MONITOR, "local"))
+        .getResult(RegionalResult.class);
+    assertNotEquals(Status.passed, awaitTerminal(id).status());
+    String path = "/v1/runs/%s/artifacts".formatted(id);
+    assertEquals(403, request("GET", path, "viewer-token", null, null).statusCode());
+    var artifacts = request("GET", path, "admin-token", null, null);
+    assertEquals(200, artifacts.statusCode());
+    var list = Json.MAPPER.readTree(artifacts.body());
+    assertTrue(list.size() > 0);
+    String artifact = list.get(0).path("id").asText();
+    var content = request("GET", "%s/%s".formatted(path, artifact), "admin-token", null, null);
+    assertEquals(200, content.statusCode());
+    assertFalse(content.body().contains("sensitive-target-response"));
+    assertFalse(content.body().contains("fixture-client-secret"));
+    assertFalse(content.body().contains("fixture-probe-key"));
+    assertEquals(id, Json.MAPPER.readTree(content.body()).path("runId").asText());
   }
 
   @Test
@@ -268,6 +354,90 @@ class ApiEndToEndTest {
         200, request("GET", "/v1/status/reconciliation", "admin-token", null, null).statusCode());
   }
 
+  @Test
+  void signedGithubPushNotificationsAreScopedAndDeduplicated() throws Exception {
+    String delivery = UUID.randomUUID().toString();
+    String body =
+        "{\"repository\":{\"full_name\":\"example/heimdall\"},\"ref\":\"refs/heads/main\"}";
+    var accepted = webhook(body, delivery, true);
+    assertEquals(202, accepted.statusCode(), accepted.body());
+    assertEquals(202, webhook(body, delivery, true).statusCode());
+    assertEquals(
+        1,
+        results
+            .jdbc()
+            .queryForObject(
+                "SELECT count(*) FROM control.webhook_deliveries WHERE id=?",
+                Integer.class,
+                delivery));
+    assertEquals(403, webhook(body, UUID.randomUUID().toString(), false).statusCode());
+    assertEquals(
+        403,
+        webhook(
+                body.replace("example/heimdall", "attacker/heimdall"),
+                UUID.randomUUID().toString(),
+                true)
+            .statusCode());
+  }
+
+  HttpResponse<String> webhook(String body, String delivery, boolean signed) throws Exception {
+    var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+    mac.init(
+        new javax.crypto.spec.SecretKeySpec(
+            "fixture-webhook-secret".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            "HmacSHA256"));
+    String signature =
+        signed
+            ? HexFormat.of()
+                .formatHex(mac.doFinal(body.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+            : "0".repeat(64);
+    return http.send(
+        HttpRequest.newBuilder(URI.create("%s/v1/integrations/github/webhook".formatted(base)))
+            .header("Content-Type", "application/json")
+            .header("X-GitHub-Delivery", delivery)
+            .header("X-GitHub-Event", "push")
+            .header("X-Hub-Signature-256", "sha256=%s".formatted(signature))
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build(),
+        HttpResponse.BodyHandlers.ofString());
+  }
+
+  @Test
+  void cancellationCommittedBeforeDispatchIsDeliveredAfterRecovery() throws Exception {
+    String id = UUID.randomUUID().toString();
+    var snapshot =
+        Fixtures.snapshot(
+            Fixtures.monitor(
+                List.of(Fixtures.step("{\"id\":\"wait\",\"type\":\"wait\",\"duration\":\"20m\"}")),
+                List.of()),
+            "http://localhost");
+    var request =
+        new StartRun(List.of(Fixtures.MONITOR), "staging", List.of("local"), Map.of(), null);
+    results.create(
+        id,
+        "dev-runner",
+        request,
+        snapshot,
+        List.of(new RegionalResult(Fixtures.MONITOR, "local", Status.queued, null, null, 0)));
+    var runs = app.getBean(RunService.class);
+    runs.cancel(new Identity("dev-runner", Map.of()), id);
+    assertTrue(
+        results
+            .jdbc()
+            .queryForObject(
+                "SELECT cancel_requested FROM control.runs WHERE id=?", Boolean.class, id));
+    var recovered = new RunService(ds, results, configs, new Rbac(), temporal.getWorkflowClient());
+    recovered.dispatch(id);
+    var result =
+        temporal
+            .getWorkflowClient()
+            .newUntypedWorkflowStub(ExecutionIds.workflowId(id, Fixtures.MONITOR, "local"))
+            .getResult(RegionalResult.class);
+    assertEquals(Status.cancelled, result.status());
+    assertEquals("passed", result.cleanup());
+    assertEquals(Status.cancelled, awaitTerminal(id).status());
+  }
+
   RunView awaitTerminal(String id) throws Exception {
     long end = System.nanoTime() + Duration.ofSeconds(20).toNanos();
     while (System.nanoTime() < end) {
@@ -290,6 +460,11 @@ class ApiEndToEndTest {
     @Bean
     JdbcResults results() {
       return results;
+    }
+
+    @Bean
+    DiagnosticArtifacts diagnostics() {
+      return diagnostics;
     }
 
     @Bean

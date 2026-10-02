@@ -1,6 +1,7 @@
 .gradle/
 .gradle-user/
 **/build/
+**/bin/
 .local/
 node_modules/
 *.log

@@ -2,7 +2,11 @@
 
 Heimdall runs API checks that you define in Git. A check can be one request or a journey that creates data, waits for a background job, verifies its result, and cleans up. You trigger approved checks through the CLI, REST API, schedules, or a deployment pipeline.
 
+An API synthetic check sends requests as a test client and compares the responses with your expectations. For example, a checkout check can create a test order and verify that processing finishes. Run it on a schedule to discover failures, or after a deployment to decide whether promotion should continue. Choose test data and cleanup that are appropriate for the environment being checked.
+
 Start here even if you have never used a synthetic monitoring tool. You need basic familiarity with an HTTP API and YAML. The local tutorial supplies a target API and disposable credentials, so you do not need a cloud account.
+
+If your team already operates Heimdall, ask your operator for its API URL, your approved team/application scope, available locations and sign-in credentials. Start with [your first monitor](02-first-monitor.md); use the shared API URL and your granted identity in place of the tutorial's local fixtures.
 
 ## Choose your starting point
 
@@ -42,6 +46,12 @@ Start here even if you have never used a synthetic monitoring tool. You need bas
 6. Trigger the monitor or suite by its identity.
 
 The local tutorial reads your checkout so you can experiment without opening a PR. Shared environments read the protected Git branch. There is no API that accepts arbitrary YAML or uploads persistent monitor configuration.
+
+## Reading the examples
+
+YAML indentation defines structure; use spaces and preserve the indentation shown. A full resource includes `apiVersion`, `kind`, `metadata` and `spec`. Later chapters show smaller fragments to place inside an existing resource. Names such as `your-org` and URLs under `example.com` are placeholders to replace before running them.
+
+The CLI is Heimdall's command-line program. An assertion is an expected condition, such as HTTP status 200. CEL (Common Expression Language) evaluates boolean conditions for branching and polling. An idempotency key identifies one submission so a network retry can retrieve the same run. Reconciliation means validating and activating a Git configuration revision. OIDC (OpenID Connect) lets Heimdall verify an identity token from your sign-in or CI provider.
 
 ## What this implementation supports
 

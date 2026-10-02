@@ -61,6 +61,19 @@ public final class HttpActivities implements RunnerActivities {
 
   @Override
   public StepOutcome execute(StepCommand command) {
+    try (var heartbeat = dev.heimdall.workflow.ActivityHeartbeat.start()) {
+      try {
+        var outcome = executeObserved(command);
+        heartbeat.check();
+        return outcome;
+      } catch (RuntimeException e) {
+        heartbeat.check();
+        throw e;
+      }
+    }
+  }
+
+  private StepOutcome executeObserved(StepCommand command) {
     String key =
         "%s/request/%s:%s".formatted(command.run().key(), command.instanceId(), command.attempt());
     var checkpoint = state.load(key, Checkpoint.class);
